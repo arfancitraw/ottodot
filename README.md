@@ -1,4 +1,4 @@
-# Ottodot Trial Class Booking System
+﻿# Ottodot Trial Class Booking System
 
 Smallest working slice of a trial booking system for Ottodot live science and math classes, built with Next.js (App Router), TypeScript, SQLite, and Prisma ORM.
 
@@ -27,6 +27,8 @@ npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+> **API:** See [API.md](API.md) — curl examples + `postman/Ottodot.postman_collection.json` (import to Postman, baseUrl `http://localhost:3000`).
+
 ---
 
 ## 📌 What Was Built
@@ -54,15 +56,15 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 * `Parent` (`id`, `name`, `email`)
 * `Student` (`id`, `parentId`, `name`, `age`)
 * `TrialClass` (`id`, `title`, `subject`, `startTime`, `maxCapacity`=4)
-* `Booking` (`id`, `trialClassId`, `studentId`, `parentId`, `status`, `createdAt`, `updatedAt`)
-  - **Unique Index**: `(trialClassId, studentId)` to prevent duplicate active bookings.
+* `Booking` (`id`, `trialClassId`, `studentId`, `parentId`, `status`, `activeKey`, `createdAt`, `updatedAt`)
+  - **Active-only unique:** `activeKey String? @unique` = `"${trialClassId}:${studentId}"` when `pending_payment|confirmed`, `null` when `payment_failed|cancelled` (SQLite null not colliding) — prevents duplicate active while allowing rebook after cancel/fail; history kept. `@@index([trialClassId, studentId])` for lookup. (Replaces plain `@@unique([trialClassId, studentId])` which blocked rebook.)
 * `PaymentAttempt` (`id`, `bookingId`, `amount`, `status`, `failureReason`, `createdAt`)
 
 ### 2. Booking Status Lifecycle
 * `pending_payment`: Initial state when parent selects child & trial class.
 * `confirmed`: Payment successful AND capacity check (< 4) passed atomically.
 * `payment_failed`: Card declined OR class overbooked during payment processing (payment refunded).
-* `cancelled`: Booking explicitly cancelled.
+* `cancelled`: Booking explicitly cancelled (frees seat, allows same child+class to rebook; row kept with `activeKey=null`).
 
 ### 3. Last-Seat Race Condition Handling Strategy
 * **Approach**: **Atomic Capacity Check inside Database Transaction (`prisma.$transaction`)**.
@@ -78,7 +80,8 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ### 4. Check Placements
 * **UI**: Input validation, immediate user feedback, interactive selection.
 * **Backend (`BookingService`)**: Duplicate booking validation, status state machine transitions, orchestration of atomic transactions.
-* **Database (SQLite/Prisma)**: Foreign key constraints, Unique Index `(trialClassId, studentId)` for active bookings.
+* **Database (SQLite/Prisma)**: Foreign key constraints, active-only unique via `activeKey` (see above), `@@index([trialClassId, studentId])`.
+* **Background job (cut):** `pending_payment` expiry cron (e.g. every 5min, cancel `pending_payment` >30min old, set `activeKey=null`) — deliberately cut, would run as future scheduled job.
 
 ---
 

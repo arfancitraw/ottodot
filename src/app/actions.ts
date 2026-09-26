@@ -1,5 +1,6 @@
 'use server';
 
+/* eslint-disable @typescript-eslint/no-require-imports */
 import { BookingService } from '@/lib/booking-service';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
@@ -43,9 +44,19 @@ export async function confirmPaymentAction(bookingId: string, forcePaymentFailur
   }
 }
 
+export async function cancelBookingAction(bookingId: string, parentId: string) {
+  try {
+    const result = await BookingService.cancelBooking({ bookingId, parentId });
+    revalidatePath('/');
+    return result;
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+    return { success: false, error: errorMessage };
+  }
+}
+
 export async function resetDatabaseAction() {
-  // Re-run seed
-  const { execSync } = require('child_process');
+  const { execSync } = require('child_process') as typeof import('child_process');
   execSync('npx tsx prisma/seed.ts');
   revalidatePath('/');
   return { success: true };

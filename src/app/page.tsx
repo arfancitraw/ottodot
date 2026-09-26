@@ -1,3 +1,6 @@
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable react-hooks/exhaustive-deps */
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -7,6 +10,7 @@ import {
   getRosterAction,
   createPendingBookingAction,
   confirmPaymentAction,
+  cancelBookingAction,
   resetDatabaseAction,
 } from './actions';
 
@@ -59,18 +63,16 @@ export default function Home() {
   const [selectedParentId, setSelectedParentId] = useState<string>('');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [selectedClassId, setSelectedClassId] = useState<string>('');
-  
+
   const [currentBooking, setCurrentBooking] = useState<any>(null);
   const [bookingResult, setBookingResult] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
 
-  // Admin Roster state
   const [activeTab, setActiveTab] = useState<'booking' | 'roster' | 'race_demo'>('booking');
   const [selectedRosterClassId, setSelectedRosterClassId] = useState<string>('');
   const [rosterData, setRosterData] = useState<ClassRoster | null>(null);
 
-  // Race condition demo log
   const [raceLogs, setRaceLogs] = useState<string[]>([]);
 
   useEffect(() => {
@@ -120,6 +122,16 @@ export default function Home() {
     }
   }
 
+  async function handleCancel() {
+    if (!currentBooking) return;
+    setLoading(true);
+    setErrorMsg('');
+    const res: any = await cancelBookingAction(currentBooking.id, currentBooking.parentId || selectedParentId);
+    setLoading(false);
+    if (!(res as any).success) { setErrorMsg((res as any).error || 'Cancel failed'); } else { setBookingResult({ success: false, reason: 'Booking cancelled', booking: res.booking }); setCurrentBooking(null); }
+    await loadData();
+  }
+
   async function handlePayment(forceFailure: boolean) {
     if (!currentBooking) return;
     setLoading(true);
@@ -142,37 +154,37 @@ export default function Home() {
   async function handleRunRaceDemo() {
     setRaceLogs([]);
     setLoading(true);
-    setRaceLogs((prev) => [...prev, '🏁 Resetting database to initial seed...']);
+    setRaceLogs((prev) => [...prev, 'Resetting database to initial seed...']);
     await resetDatabaseAction();
     await loadData();
 
-    setRaceLogs((prev) => [...prev, '📌 Target Class: "Primary Math Challenge" (3 confirmed students, 1 seat remaining)']);
-    setRaceLogs((prev) => [...prev, '👤 User A (David Miller) creates pending booking for student Emma...']);
+    setRaceLogs((prev) => [...prev, 'Target Class: "Primary Math Challenge" (3 confirmed students, 1 seat remaining)']);
+    setRaceLogs((prev) => [...prev, 'User A (David Miller) creates pending booking for student Emma...']);
     const bookingA = await createPendingBookingAction('parent_4', 'student_4', 'class_almost_full');
 
-    setRaceLogs((prev) => [...prev, '👤 User B (Eva Green) creates pending booking for student Noah...']);
+    setRaceLogs((prev) => [...prev, 'User B (Eva Green) creates pending booking for student Noah...']);
     const bookingB = await createPendingBookingAction('parent_5', 'student_5', 'class_almost_full');
 
     if (!bookingA.booking || !bookingB.booking) {
-      setRaceLogs((prev) => [...prev, '❌ Error creating pending bookings for demo']);
+      setRaceLogs((prev) => [...prev, 'Error creating pending bookings for demo']);
       setLoading(false);
       return;
     }
 
-    setRaceLogs((prev) => [...prev, '⚡ Executing SIMULTANEOUS Payment Confirmations using Promise.all()...']);
+    setRaceLogs((prev) => [...prev, 'Executing SIMULTANEOUS Payment Confirmations using Promise.all()...']);
 
     const [resA, resB] = await Promise.all([
       confirmPaymentAction(bookingA.booking.id, false),
       confirmPaymentAction(bookingB.booking.id, false),
     ]);
 
-    setRaceLogs((prev) => [...prev, `📊 Result User A: ${resA.success ? '✅ CONFIRMED' : '❌ FAILED/REFUNDED (' + resA.reason + ')'}`]);
-    setRaceLogs((prev) => [...prev, `📊 Result User B: ${resB.success ? '✅ CONFIRMED' : '❌ FAILED/REFUNDED (' + resB.reason + ')'}`]);
+    setRaceLogs((prev) => [...prev, `Result User A: ${resA.success ? 'CONFIRMED' : 'FAILED/REFUNDED (' + resA.reason + ')'}`]);
+    setRaceLogs((prev) => [...prev, `Result User B: ${resB.success ? 'CONFIRMED' : 'FAILED/REFUNDED (' + resB.reason + ')'}`]);
 
     const roster = await getRosterAction('class_almost_full');
     setRaceLogs((prev) => [
       ...prev,
-      `🛡️ Invariant Verification: Total Confirmed Students = ${roster.confirmedCount} / ${roster.maxCapacity} (Max 4 limit perfectly respected!)`,
+      `Invariant Verification: Total Confirmed Students = ${roster.confirmedCount} / ${roster.maxCapacity} (Max 4 limit perfectly respected!)`,
     ]);
 
     setLoading(false);
@@ -190,11 +202,10 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-6 md:p-12 font-sans">
-      <div className="max-w-4xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="border-b border-slate-800 pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
+    <div suppressHydrationWarning className="min-h-screen bg-slate-900 text-slate-100 p-6 md:p-12 font-sans">
+      <div suppressHydrationWarning className="max-w-4xl mx-auto space-y-8">
+        <div suppressHydrationWarning className="border-b border-slate-800 pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div suppressHydrationWarning>
             <h1 className="text-3xl font-bold text-emerald-400">Ottodot Trial Class Booking</h1>
             <p className="text-slate-400 text-sm mt-1">Smallest Working Slice - Concurrency & Invariant Handling</p>
           </div>
@@ -203,12 +214,11 @@ export default function Home() {
             disabled={loading}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm border border-slate-700 transition"
           >
-            🔄 Reset Database & Seed
+            Reset Database & Seed
           </button>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex gap-3 bg-slate-800/60 p-1.5 rounded-xl border border-slate-800">
+        <div suppressHydrationWarning className="flex gap-3 bg-slate-800/60 p-1.5 rounded-xl border border-slate-800">
           <button
             onClick={() => setActiveTab('booking')}
             className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition ${
@@ -234,19 +244,16 @@ export default function Home() {
               activeTab === 'race_demo' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            ⚡ Last-Seat Race Demo
+            Last-Seat Race Demo
           </button>
         </div>
 
-        {/* TAB 1: PARENT BOOKING FLOW */}
         {activeTab === 'booking' && (
-          <div className="grid md:grid-cols-2 gap-8">
-            {/* Booking Form */}
-            <div className="bg-slate-800/80 rounded-2xl p-6 border border-slate-700/60 space-y-5">
+          <div suppressHydrationWarning className="grid md:grid-cols-2 gap-8">
+            <div suppressHydrationWarning className="bg-slate-800/80 rounded-2xl p-6 border border-slate-700/60 space-y-5">
               <h2 className="text-xl font-semibold text-slate-200 border-b border-slate-700/60 pb-3">Book a Trial Class</h2>
 
-              {/* Select Parent */}
-              <div>
+              <div suppressHydrationWarning>
                 <label className="block text-xs uppercase tracking-wider text-slate-400 mb-2">Select Parent</label>
                 <select
                   value={selectedParentId}
@@ -261,8 +268,7 @@ export default function Home() {
                 </select>
               </div>
 
-              {/* Select Student */}
-              <div>
+              <div suppressHydrationWarning>
                 <label className="block text-xs uppercase tracking-wider text-slate-400 mb-2">Select Child</label>
                 <select
                   value={selectedStudentId}
@@ -277,8 +283,7 @@ export default function Home() {
                 </select>
               </div>
 
-              {/* Select Trial Class */}
-              <div>
+              <div suppressHydrationWarning>
                 <label className="block text-xs uppercase tracking-wider text-slate-400 mb-2">Select Trial Class</label>
                 <select
                   value={selectedClassId}
@@ -287,7 +292,7 @@ export default function Home() {
                 >
                   {classes.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.title} — {c.confirmedCount}/{c.maxCapacity} Seats Taken ({c.availableSeats} Left)
+                      {c.title} - {c.confirmedCount}/{c.maxCapacity} Seats Taken ({c.availableSeats} Left)
                     </option>
                   ))}
                 </select>
@@ -302,19 +307,16 @@ export default function Home() {
               </button>
 
               {errorMsg && (
-                <div className="bg-rose-950/60 border border-rose-800 text-rose-300 p-3 rounded-lg text-sm">
-                  ⚠️ {errorMsg}
-                </div>
+                <div suppressHydrationWarning className="bg-rose-950/60 border border-rose-800 text-rose-300 p-3 rounded-lg text-sm">{errorMsg}</div>
               )}
             </div>
 
-            {/* Payment & Status Section */}
-            <div className="bg-slate-800/80 rounded-2xl p-6 border border-slate-700/60 space-y-5">
+            <div suppressHydrationWarning className="bg-slate-800/80 rounded-2xl p-6 border border-slate-700/60 space-y-5">
               <h2 className="text-xl font-semibold text-slate-200 border-b border-slate-700/60 pb-3">Payment & Status</h2>
 
               {currentBooking ? (
-                <div className="space-y-4">
-                  <div className="bg-amber-950/40 border border-amber-800/80 p-4 rounded-xl space-y-2">
+                <div suppressHydrationWarning className="space-y-4">
+                  <div suppressHydrationWarning className="bg-amber-950/40 border border-amber-800/80 p-4 rounded-xl space-y-2">
                     <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded text-xs font-semibold uppercase">
                       Status: {currentBooking.status}
                     </span>
@@ -325,25 +327,26 @@ export default function Home() {
                     <p className="text-xs text-slate-400">Please complete mock payment to confirm seat.</p>
                   </div>
 
-                  <div className="flex gap-3">
+                  <div suppressHydrationWarning className="flex gap-3">
                     <button
                       onClick={() => handlePayment(false)}
                       disabled={loading}
                       className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold rounded-lg text-sm shadow transition"
                     >
-                      💳 Complete Payment (Success)
+                      Complete Payment (Success)
                     </button>
                     <button
                       onClick={() => handlePayment(true)}
                       disabled={loading}
                       className="flex-1 py-3 bg-rose-700 hover:bg-rose-600 disabled:opacity-50 text-white font-semibold rounded-lg text-sm shadow transition"
                     >
-                      ❌ Simulate Card Decline
+                      Simulate Card Decline
                     </button>
                   </div>
+                  <button suppressHydrationWarning onClick={handleCancel} disabled={loading} className="w-full py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white font-medium rounded-lg text-sm transition">Cancel Booking</button>
                 </div>
               ) : bookingResult ? (
-                <div
+                <div suppressHydrationWarning
                   className={`p-5 rounded-xl border ${
                     bookingResult.success
                       ? 'bg-emerald-950/40 border-emerald-700 text-emerald-200'
@@ -351,19 +354,19 @@ export default function Home() {
                   }`}
                 >
                   <h3 className="font-semibold text-base mb-1">
-                    {bookingResult.success ? '🎉 Booking Confirmed!' : '⚠️ Payment / Confirmation Failed'}
+                    {bookingResult.success ? 'Booking Confirmed!' : 'Payment / Confirmation Failed'}
                   </h3>
                   <p className="text-sm opacity-90">{bookingResult.reason}</p>
-                  <div className="mt-4 pt-3 border-t border-slate-700/50 text-xs font-mono space-y-1">
-                    <div>Booking ID: {bookingResult.booking?.id}</div>
-                    <div>Final Status: {bookingResult.booking?.status}</div>
+                  <div suppressHydrationWarning className="mt-4 pt-3 border-t border-slate-700/50 text-xs font-mono space-y-1">
+                    <div suppressHydrationWarning>Booking ID: {bookingResult.booking?.id}</div>
+                    <div suppressHydrationWarning>Final Status: {bookingResult.booking?.status}</div>
                     {bookingResult.payment && (
-                      <div>Payment Status: {bookingResult.payment.status} ({bookingResult.payment.failureReason || 'Success'})</div>
+                      <div suppressHydrationWarning>Payment Status: {bookingResult.payment.status} ({bookingResult.payment.failureReason || 'Success'})</div>
                     )}
                   </div>
                 </div>
               ) : (
-                <div className="text-slate-500 text-sm text-center py-12">
+                <div suppressHydrationWarning className="text-slate-500 text-sm text-center py-12">
                   No active booking selected. Choose a parent, child, and class on the left to start.
                 </div>
               )}
@@ -371,16 +374,15 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: ADMIN ROSTER VIEW */}
         {activeTab === 'roster' && (
-          <div className="bg-slate-800/80 rounded-2xl p-6 border border-slate-700/60 space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-700/60 pb-4">
-              <div>
+          <div suppressHydrationWarning className="bg-slate-800/80 rounded-2xl p-6 border border-slate-700/60 space-y-6">
+            <div suppressHydrationWarning className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-700/60 pb-4">
+              <div suppressHydrationWarning>
                 <h2 className="text-xl font-semibold text-slate-200">Trial Class Roster (Max Cap: 4)</h2>
                 <p className="text-xs text-slate-400">View confirmed students roster for teachers & admin</p>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div suppressHydrationWarning className="flex items-center gap-3">
                 <label className="text-xs text-slate-400">Select Class:</label>
                 <select
                   value={selectedRosterClassId}
@@ -397,26 +399,24 @@ export default function Home() {
             </div>
 
             {rosterData && (
-              <div className="space-y-4">
-                {/* Roster Header summary */}
-                <div className="grid grid-cols-3 gap-4 text-center">
-                  <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/50">
-                    <div className="text-xs text-slate-400 uppercase">Max Capacity</div>
-                    <div className="text-xl font-bold text-slate-200">{rosterData.maxCapacity}</div>
+              <div suppressHydrationWarning className="space-y-4">
+                <div suppressHydrationWarning className="grid grid-cols-3 gap-4 text-center">
+                  <div suppressHydrationWarning className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/50">
+                    <div suppressHydrationWarning className="text-xs text-slate-400 uppercase">Max Capacity</div>
+                    <div suppressHydrationWarning className="text-xl font-bold text-slate-200">{rosterData.maxCapacity}</div>
                   </div>
-                  <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/50">
-                    <div className="text-xs text-slate-400 uppercase">Confirmed Students</div>
-                    <div className="text-xl font-bold text-emerald-400">{rosterData.confirmedCount}</div>
+                  <div suppressHydrationWarning className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/50">
+                    <div suppressHydrationWarning className="text-xs text-slate-400 uppercase">Confirmed Students</div>
+                    <div suppressHydrationWarning className="text-xl font-bold text-emerald-400">{rosterData.confirmedCount}</div>
                   </div>
-                  <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/50">
-                    <div className="text-xs text-slate-400 uppercase">Available Seats</div>
-                    <div className="text-xl font-bold text-amber-400">{rosterData.availableSeats}</div>
+                  <div suppressHydrationWarning className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/50">
+                    <div suppressHydrationWarning className="text-xs text-slate-400 uppercase">Available Seats</div>
+                    <div suppressHydrationWarning className="text-xl font-bold text-amber-400">{rosterData.availableSeats}</div>
                   </div>
                 </div>
 
-                {/* Table */}
                 {rosterData.roster.length > 0 ? (
-                  <div className="overflow-x-auto">
+                  <div suppressHydrationWarning className="overflow-x-auto">
                     <table className="w-full text-left text-sm text-slate-300">
                       <thead className="bg-slate-900/90 text-xs uppercase text-slate-400 border-b border-slate-700">
                         <tr>
@@ -436,29 +436,27 @@ export default function Home() {
                             <td className="p-3">{row.studentAge} y/o</td>
                             <td className="p-3">{row.parentName}</td>
                             <td className="p-3 font-mono text-xs text-slate-400">{row.parentEmail}</td>
-                            <td className="p-3 text-xs text-slate-400">
-                              {new Date(row.confirmedAt).toLocaleTimeString()}
-                            </td>
+                            <td suppressHydrationWarning className="p-3 text-xs text-slate-400">{new Date(row.confirmedAt).toLocaleTimeString()}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-slate-500 text-sm">No confirmed students in this class yet.</div>
+                  <div suppressHydrationWarning className="text-center py-8 text-slate-500 text-sm">No confirmed students in this class yet.</div>
                 )}
               </div>
             )}
           </div>
         )}
 
-        {/* TAB 3: LAST-SEAT RACE CONDITION DEMO */}
         {activeTab === 'race_demo' && (
-          <div className="bg-slate-800/80 rounded-2xl p-6 border border-purple-900/60 space-y-6">
-            <div className="border-b border-slate-700/60 pb-4">
-              <h2 className="text-xl font-semibold text-purple-300">⚡ Last-Seat Race Condition Simulator</h2>
+          <div suppressHydrationWarning className="bg-slate-800/80 rounded-2xl p-6 border border-purple-900/60 space-y-6">
+            <div suppressHydrationWarning className="border-b border-slate-700/60 pb-4">
+              <h2 className="text-xl font-semibold text-purple-300">Last-Seat Race Condition Simulator</h2>
               <p className="text-xs text-slate-400 mt-1">
-                Simulates User A (David) and User B (Eva) attempting to pay simultaneously for the LAST seat (4th seat) of "Primary Math Challenge".
+                Simulates User A (David) and User B (Eva) attempting to pay simultaneously for the LAST seat (4th seat) of
+                &quot;Primary Math Challenge&quot;.
               </p>
             </div>
 
@@ -467,13 +465,13 @@ export default function Home() {
               disabled={loading}
               className="px-6 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg transition"
             >
-              {loading ? 'Simulating Concurrent Payments...' : '🚀 Execute Last-Seat Race Test (Promise.all)'}
+              {loading ? 'Simulating Concurrent Payments...' : 'Execute Last-Seat Race Test (Promise.all)'}
             </button>
 
             {raceLogs.length > 0 && (
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs space-y-2 text-slate-300 max-h-96 overflow-y-auto">
+              <div suppressHydrationWarning className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs space-y-2 text-slate-300 max-h-96 overflow-y-auto">
                 {raceLogs.map((log, i) => (
-                  <div key={i} className="leading-relaxed">
+                  <div suppressHydrationWarning key={i} className="leading-relaxed">
                     {log}
                   </div>
                 ))}
@@ -485,3 +483,9 @@ export default function Home() {
     </div>
   );
 }
+
+
+
+
+
+

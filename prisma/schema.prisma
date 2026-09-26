@@ -41,12 +41,13 @@ model Booking {
   student      Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
   parentId     String
   parent       Parent           @relation(fields: [parentId], references: [id], onDelete: Cascade)
-  status       String           // pending_payment, confirmed, payment_failed, cancelled
+  status       String // pending_payment, confirmed, payment_failed, cancelled
+  activeKey    String?          @unique // "${trialClassId}:${studentId}" when active (pending_payment|confirmed), null when terminal — frees rebook after cancel/fail (SQLite null not colliding)
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
   payments     PaymentAttempt[]
 
-  @@unique([trialClassId, studentId], name: "unique_active_booking")
+  @@index([trialClassId, studentId])
 }
 
 model PaymentAttempt {
@@ -54,7 +55,7 @@ model PaymentAttempt {
   bookingId     String
   booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   amount        Int
-  status        String   // success, failed
-  failureReason String?
+  status        String // success, failed
+  failureReason String? // card_declined, class_overbooked_refunded
   createdAt     DateTime @default(now())
 }

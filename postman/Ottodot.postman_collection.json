@@ -1,0 +1,19 @@
+{
+  "info": { "name": "Ottodot Trial Booking", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+  "variable": [{ "key": "baseUrl", "value": "http://localhost:3000" }, { "key": "bookingId", "value": "" }],
+  "item": [
+    { "name": "1 GET Parents", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/parents", "host": ["{{baseUrl}}"], "path": ["api", "parents"] } } },
+    { "name": "2 GET Trial Classes", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/trial-classes", "host": ["{{baseUrl}}"], "path": ["api", "trial-classes"] } } },
+    { "name": "3 GET Roster class_almost_full", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/roster?classId=class_almost_full", "host": ["{{baseUrl}}"], "path": ["api", "roster"], "query": [{ "key": "classId", "value": "class_almost_full" }] } } },
+    { "name": "4 GET Roster class_available", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/roster?classId=class_available", "host": ["{{baseUrl}}"], "path": ["api", "roster"], "query": [{ "key": "classId", "value": "class_available" }] } } },
+    {
+      "name": "5 POST Create Booking (pending)",
+      "event": [{ "listen": "test", "script": { "exec": ["if(pm.response.code===200){var j=pm.response.json(); if(j.booking) pm.collectionVariables.set('bookingId', j.booking.id);}"] } }],
+      "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"parentId\": \"parent_4\",\n  \"studentId\": \"student_4\",\n  \"trialClassId\": \"class_available\"\n}" }, "url": { "raw": "{{baseUrl}}/api/bookings", "host": ["{{baseUrl}}"], "path": ["api", "bookings"] } }
+    },
+    { "name": "6 POST Duplicate (expect 409)", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"parentId\": \"parent_1\",\n  \"studentId\": \"student_1\",\n  \"trialClassId\": \"class_almost_full\"\n}" }, "url": { "raw": "{{baseUrl}}/api/bookings", "host": ["{{baseUrl}}"], "path": ["api", "bookings"] } } },
+    { "name": "7 POST Confirm Success", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{baseUrl}}/api/bookings/{{bookingId}}/confirm", "host": ["{{baseUrl}}"], "path": ["api", "bookings", "{{bookingId}}", "confirm"] } } },
+    { "name": "8 POST Confirm Force Fail (card_declined)", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"forcePaymentFailure\": true\n}" }, "url": { "raw": "{{baseUrl}}/api/bookings/{{bookingId}}/confirm", "host": ["{{baseUrl}}"], "path": ["api", "bookings", "{{bookingId}}", "confirm"] } } },
+    { "name": "9 POST Cancel (pending|confirmed only)", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"parentId\": \"parent_4\"\n}" }, "url": { "raw": "{{baseUrl}}/api/bookings/{{bookingId}}/cancel", "host": ["{{baseUrl}}"], "path": ["api", "bookings", "{{bookingId}}", "cancel"] } } }
+  ]
+}

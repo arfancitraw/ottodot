@@ -1,178 +1,86 @@
-# CLAUDE.md - Master Engineering Guide & Instructions for Claude Code
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
-Ottodot Trial Class Booking System: A production-grade, smallest working slice of a live trial booking system for kids' online science and math classes.
 
-Primary Goal: Build a rock-solid, highly deterministic backend and minimal full-stack application that enforces hard business invariants, handles concurrent booking race conditions gracefully, records payment results accurately, and provides a clear roster view.
+Ottodot Trial Class Booking System — smallest working slice of a live trial booking system for kids' online science/math classes. Single-page Next.js app: Parent Booking flow + Teacher Roster + Last-Seat Race Simulator. Core value is deterministic invariant enforcement under concurrency, not UI polish.
 
----
+## Commands
 
-## 🛑 Non-Negotiable Invariants & Core Business Rules
-1. **Strict Capacity Cap**: A trial class can have at most **4 CONFIRMED** students (`COUNT(confirmed) <= 4`). No exceptions.
-2. **No Duplicate Active Bookings**: A student cannot have more than one active booking (`pending_payment` or `confirmed`) for the same trial class.
-3. **Payment Failure Isolation**: A payment failure (`card_declined` or overbooking refund) MUST NEVER result in the student being added to the confirmed roster.
-4. **Atomic Concurrency Protection**: Race conditions on the last available seat (4th seat) MUST be handled atomically using database transactions (`prisma.$transaction`).
-5. **Exact Status Lifecycle**:
-   - `pending_payment`: Booking created, awaiting payment.
-   - `confirmed`: Payment succeeded AND seat capacity check passed inside atomic transaction.
-   - `payment_failed`: Payment failed (card declined OR class overbooked during checkout).
-   - `cancelled`: Booking explicitly cancelled.
-
----
-
-## 🛠️ Recommended Tech Stack & Environment
-- **Framework**: Next.js (App Router, TypeScript, Server Actions)
-- **Database**: SQLite with Prisma ORM (v5.x)
-- **Testing**: Vitest (`vitest run`)
-- **Styling**: Tailwind CSS
-
----
-
-## 📁 Required Project Directory Structure
-```
-ottodot-trial-booking/
-├── CLAUDE.md                   # This master prompt guide
-├── README.md                   # Project summary, architecture, tradeoffs, run instructions
-├── AI_USAGE.md                 # AI tool usage declaration & verification proof
-├── package.json                # Scripts: dev, build, db:seed, test
-├── prisma/
-│   ├── schema.prisma           # Complete database schema
-│   ├── seed.ts                 # Synthetic seed data (4 required test cases)
-│   └── dev.db                  # SQLite database file
-├── src/
-│   ├── lib/
-│   │   ├── prisma.ts           # Global Prisma client singleton
-│   │   ├── booking-service.ts  # Core business logic & atomic transactions
-│   │   └── booking-service.test.ts # Vitest suite with Promise.all race condition test
-│   └── app/
-│       ├── actions.ts          # Server Actions exposing service to UI
-│       ├── page.tsx            # Single page App (Booking Form, Admin Roster, Race Simulator)
-│       └── globals.css         # Tailwind styles
+```bash
+npm install                  # install deps
+npx prisma db push           # push schema to SQLite (no migrations)
+npm run db:seed              # seed via tsx prisma/seed.ts — 6 parents/children, 2 classes, 3 confirmed bookings
+npm run dev                  # Next.js dev server (http://localhost:3000)
+npm run build                # production build (Turbopack)
+npm run lint                 # eslint (next/core-web-vitals + typescript)
+npm test                     # or: npx vitest run — 4 tests incl. Promise.all race
+npx vitest run -t "race"     # single test by name pattern
 ```
 
----
+No `vitest.config.*` — uses Vitest defaults. No `DATABASE_URL` prefix needed locally; `.env` is `file:./dev.db` relative to `prisma/`.
 
-## 🗄️ Database Schema Specification (`prisma/schema.prisma`)
+To reset during dev: `npx prisma db push && npm run db:seed` or use the "Reset Database & Seed" button / `resetDatabaseAction` (runs `npx tsx prisma/seed.ts` via `execSync`).
 
-```prisma
-generator client {
-  provider = "prisma-client-js"
-}
+## Architecture
 
-datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
-}
+**Stack:** Next.js 16.3.6 App Router + TypeScript (strict) + React 19, Prisma 5.22 + SQLite (`prisma/dev.db`), Tailwind 4, Vitest 3. Path alias `@/*` → `src/*`.
 
-model Parent {
-  id        String    @id @default(uuid())
-  name      String
-  email     String    @unique
-  students  Student[]
-  bookings  Booking[]
-}
+**Data model (`prisma/schema.prisma`):** `Parent` 1—N `Student`, `Parent`/`Student`/`TrialClass` N—N via `Booking`, `Booking` 1—N `PaymentAttempt`. `Booking @@unique([trialClassId, studentId])` prevents duplicates at DB level. Status fields are plain `String` (no enum): Booking `pending_payment | confirmed | payment_failed | cancelled`, PaymentAttempt `success | failed` + `failureReason: card_declined | class_overbooked_refunded`.
 
-model Student {
-  id        String    @id @default(uuid())
-  parentId  String
-  parent    Parent    @relation(fields: [parentId], references: [id], onDelete: Cascade)
-  name      String
-  age       Int
-  bookings  Booking[]
-}
+**Core service — `src/lib/booking-service.ts` (`BookingService`):**
+- `createPendingBooking({ parentId, studentId, trialClassId })` — validates student belongs to parent, checks `status in [pending_payment, confirmed]` for duplicate → throws `DUPLICATE_BOOKING`, creates `pending_payment` booking.
+- `confirmBookingWithPayment({ bookingId, forcePaymentFailure, amount })` — entire body inside `prisma.$transaction(async (tx) => ...)`. Order: fetch booking → validate `pending_payment` → if `forcePaymentFailure` record `failed/card_declined` → else count `confirmed` for `trialClassId` → if `count >= maxCapacity` record `failed/class_overbooked_refunded` → else record `success` + set `confirmed`. Returns `{ success, reason, booking, payment }`. SQLite `BEGIN IMMEDIATE` serializes concurrent confirms.
+- `getTrialClassRoster(trialClassId)` / `getAllTrialClasses()` — roster sorted `createdAt asc`, derives `confirmedCount`/`availableSeats`, maps `seatNumber = index+1`.
 
-model TrialClass {
-  id          String    @id @default(uuid())
-  title       String
-  subject     String
-  startTime   DateTime
-  maxCapacity Int       @default(4)
-  bookings    Booking[]
-}
+**Server Actions — `src/app/actions.ts`:** thin wrappers (`getParentsAndStudents`, `getTrialClasses`, `getRosterAction`, `createPendingBookingAction`, `confirmPaymentAction`, `resetDatabaseAction`) that call `BookingService`/`prisma` + `revalidatePath('/')`. Error shape: `{ success: false, error/reason }`.
 
-model Booking {
-  id           String           @id @default(uuid())
-  trialClassId String
-  trialClass   TrialClass       @relation(fields: [trialClassId], references: [id], onDelete: Cascade)
-  studentId    String
-  student      Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  parentId     String
-  parent       Parent           @relation(fields: [parentId], references: [id], onDelete: Cascade)
-  status       String           // pending_payment, confirmed, payment_failed, cancelled
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  payments     PaymentAttempt[]
+**UI — `src/app/page.tsx`:** single `'use client'` component, 3 tabs (`booking | roster | race_demo`). No auth — parent selected via dropdown. Race demo resets DB, creates two pending bookings (`parent_4`/`student_4` + `parent_5`/`student_5` on `class_almost_full`), runs `Promise.all([confirm...])`, displays invariant check.
 
-  @@unique([trialClassId, studentId], name: "unique_active_booking")
-}
+**Prisma client — `src/lib/prisma.ts`:** global singleton (avoids hot-reload duplication), logs `query/info/warn/error` in dev.
 
-model PaymentAttempt {
-  id            String   @id @default(uuid())
-  bookingId     String
-  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  amount        Int
-  status        String   // success, failed
-  failureReason String?  // card_declined, class_overbooked_refunded
-  createdAt     DateTime @default(now())
-}
+## Non-Negotiable Invariants
+
+1. `COUNT(confirmed) <= maxCapacity (4)` per `TrialClass` — enforced inside transaction count check, never outside.
+2. No duplicate active booking (`pending_payment` or `confirmed`) for same `(trialClassId, studentId)` — application check + `@@unique` constraint.
+3. Payment failure never yields `confirmed` — both `card_declined` and `class_overbooked_refunded` set `payment_failed`.
+4. All payment confirmation logic must stay inside `prisma.$transaction`; pre-checking capacity outside the transaction is a TOCTOU bug.
+5. Status lifecycle is strict: `pending_payment → confirmed | payment_failed`, plus `cancelled` terminal state.
+
+## Project Structure
+
+```
+prisma/
+  schema.prisma       # 5 models, SQLite datasource
+  seed.ts             # deterministic IDs: parent_1..6, student_1..6, class_available, class_almost_full, booking_seed_1..3
+  dev.db              # SQLite file (gitignored via .env* but file exists locally)
+src/
+  lib/
+    prisma.ts         # singleton client
+    booking-service.ts
+    booking-service.test.ts  # 4 tests, beforeEach re-creates seed state
+  app/
+    actions.ts        # server actions
+    page.tsx          # all UI
+    layout.tsx        # Geist fonts, metadata
+    globals.css       # Tailwind
 ```
 
----
+Seed cases: `class_available` (0 confirmed), `class_almost_full` (3 confirmed, 1 seat left — the race target), `parent_1/student_1` already in `class_almost_full` (duplicate test), `parent_6/student_6` (card-decline test), `parent_4`/`parent_5` (race candidates A/B).
 
-## ⚡ Key Logic & Concurrency Algorithm (`src/lib/booking-service.ts`)
+## Tests
 
-### 1. `createPendingBooking({ parentId, studentId, trialClassId })`
-- Check if student exists & belongs to parent.
-- Check if student already has an active booking (`pending_payment` or `confirmed`) for `trialClassId`.
-  - If yes, throw `Error('DUPLICATE_BOOKING: Student already registered for this trial class.')`.
-- Create booking record with `status: 'pending_payment'`.
+`src/lib/booking-service.test.ts` — 4 Vitest tests, each `beforeEach` wipes and re-seeds `class_almost_full` + 3 confirmed bookings:
+1. Available seat — create pending → confirm → assert `confirmedCount 4`.
+2. Duplicate — `createPendingBooking` for already-confirmed `student_1` → throws `/DUPLICATE_BOOKING/`.
+3. Payment failure — `forcePaymentFailure: true` → `payment_failed`/`card_declined`, roster stays 3.
+4. Race — two pendings then `Promise.all` confirms → exactly 1 success / 1 `class_overbooked_refunded`, roster 4.
 
-### 2. `confirmBookingWithPayment({ bookingId, forcePaymentFailure = false, amount = 2000 })`
-- Must execute inside `prisma.$transaction(async (tx) => { ... })`:
-  1. Fetch booking with `trialClass`.
-  2. Validate current status is `pending_payment`.
-  3. If `forcePaymentFailure` is true:
-     - Record `PaymentAttempt` (`status: 'failed'`, `failureReason: 'card_declined'`).
-     - Update `Booking` status to `payment_failed`.
-     - Return `{ success: false, reason: 'Payment failed (card declined)', booking, payment }`.
-  4. Capacity Check (Atomic Lock):
-     - Count confirmed bookings: `const count = await tx.booking.count({ where: { trialClassId, status: 'confirmed' } })`.
-     - If `count >= trialClass.maxCapacity`:
-       - Record `PaymentAttempt` (`status: 'failed'`, `failureReason: 'class_overbooked_refunded'`).
-       - Update `Booking` status to `payment_failed`.
-       - Return `{ success: false, reason: 'Class full. Refunded.', booking, payment }`.
-  5. If `count < trialClass.maxCapacity`:
-     - Record `PaymentAttempt` (`status: 'success'`).
-     - Update `Booking` status to `confirmed`.
-     - Return `{ success: true, reason: 'Booking confirmed', booking, payment }`.
+## Conventions to Preserve
 
----
-
-## 🧪 Required Seed Data (`prisma/seed.ts`)
-Must include 4 distinct test cases:
-1. `class_available`: Trial class with 0 or 1 confirmed student.
-2. `class_almost_full`: Trial class with **EXACTLY 3 confirmed students** (only 1 seat remaining).
-3. `duplicate_test_parent`: Parent & child already registered in `class_almost_full` for duplicate booking testing.
-4. `payment_fail_trigger`: Student & parent dedicated for testing card decline simulation.
-
----
-
-## 🏁 Automated Testing Requirements (`src/lib/booking-service.test.ts`)
-Write Vitest tests for all 4 scenarios:
-1. **Available Seat Test**: Successfully book & confirm when seats are available.
-2. **Duplicate Booking Test**: Reject duplicate booking attempt for the same child & class.
-3. **Payment Failure Test**: Ensure failed payment sets status to `payment_failed` without adding student to confirmed roster.
-4. **Last-Seat Race Condition Test**:
-   - `class_almost_full` has 3 confirmed students.
-   - User A (David) and User B (Eva) create pending bookings for their respective children.
-   - Execute parallel confirmation: `Promise.all([confirmBooking(A), confirmBooking(B)])`.
-   - Assert: Exactly **1 succeeds** (`confirmed`), **1 fails** (`payment_failed`), and roster total `confirmed` count is **strictly 4**.
-
----
-
-## 💻 Commands for Claude Code Execution & Verification
-When instructing Claude Code, run these commands to verify:
-- Database Setup: `npx prisma db push && npx tsx prisma/seed.ts`
-- Run Tests: `npx vitest run`
-- Build Application: `npm run build`
-- Dev Server: `npm run dev`
+- Keep `failureReason` camelCase (schema field is `failureReason`, not `failure_reason`).
+- Keep deterministic seed IDs — tests and race demo hardcode `parent_4`, `student_5`, `class_almost_full`, etc.
+- Keep `prisma.$transaction` with callback form `prisma.$transaction(async (tx) => ...)` and use `tx.*` inside; don't switch to array form.
+- `actions.ts:resetDatabaseAction` uses `require('child_process').execSync` — intentional sync re-seed for demo; don't refactor to async without testing dev UX.
+- No Cursor/Copilot rules, no Gemini/Codex configs in repo — nothing to import.
